@@ -15,12 +15,12 @@
         </table>
       </div> 
     </div>
-    <div class="code-container">
-      <table style="width:100%">
-        <tr class="title" style="width:100%">
-          <td style="width:25%;padding-left:5%">机器码</td>
-          <td style="width:30%;padding-left:5%">预处理</td>
-          <td style="width:40%;padding-left:5%">Code</td>
+    <div class="code-container" style="overflow:hidden;">
+      <table style="padding-left:20px;width:600px;">
+        <tr class="title" >
+          <td style="width:150px;">机器码</td>
+          <td style="width:150px;">预处理</td>
+          <td style="width:150px;">Code</td>
         </tr>
       </table>
       <hr>
@@ -99,7 +99,9 @@
           </tbody>
         </table>
       </div>
-      <div class="code-out" v-html="Output">
+      <div class="code-out" v-html="Output" 
+        v-bind:contenteditable="this.ConsoleModel=='edit'"
+        v-on:input="EditCode">
       </div>
       <div>
         <button class="nice-button" v-on:click="Reset">重置</button>
@@ -115,7 +117,7 @@
         </button>
         <button class="nice-button" v-on:click="Edit"
           v-bind:class="{'nice-button':true,'active':this.ConsoleModel=='edit'}" >
-          编辑
+          导入
         </button>
         <button class="nice-button">链接</button>
       </div>
@@ -301,13 +303,32 @@ export default {
       StackRadix:16,
       MCRadix:16,
       DataModel:'stack',
-      ConsoleModel:'message'
+      ConsoleModel:'message',
     }
   },
   methods:{
     CalcLinenumber:function(i){
       var n=String(this.Code.length).length
       return String(i).padStart(n,'0')
+    },
+    EditCode:function(){
+      if(this.ConsoleModel!='edit'){
+        return;
+      }
+      var str=document.getElementsByClassName('code-out')[0].innerHTML;
+      str=str.replace(/&nbsp;/g,' ').replace(/<div>|"/g,'').replace(/<\/div>/g,'<br>');
+      str=str.split('<br>');
+      str=str.filter(Boolean);
+      this.Code=[];
+      for(var i=0;i<str.length;i++){
+        this.Code.push(
+          {or:str[i],op:"---",rd:0,rs1:0,rs2:0, mc:0x000000, active:false,run:false,breakpoint:false, tag:'I', Message:"无错误"},
+        )
+        this.Compile(i);
+      }
+      if(this.Code.length==0){
+        this.Code.splice(i,1, {or:"",op:"--",rd:0,rs1:0,rs2:0, mc:0, active:false,run:false,breakpoint:false, tag:'E', Message:"空指令"})
+      }
     },
     CalcRadix:function(v, radix){
       if(radix==16){
@@ -351,12 +372,13 @@ export default {
       e.returnValue=false;
       var x=window.getSelection().getRangeAt(0).endOffset;
       var t=document.getElementById(String(this.Focus)).innerHTML;
+      var keys=Object.keys(this.Label)
       if(x!=0||t==""){
-        this.Code.splice(i+1,0,{or:"",op:'---',rs1:0,rs2:0,rd:0,mc:0,active:false,run:false,breakpoint:false});
-        for(var key in Object.keys(this.Label)){
+        this.Code.splice(i+1,0,{or:"",op:'---',rs1:0,rs2:0,rd:0,mc:0,active:false,run:false,breakpoint:false}); 
+        for(var j in keys){
           //所有大于i的行,行数+1
-          if(this.Label[key]>i){
-            this.Label[key]+=1;
+          if(this.Label[keys[j]]>i){
+            this.Label[keys[j]]+=1;
           }
         }
         this.MoveFocus(i+1);
@@ -365,10 +387,10 @@ export default {
         this.Code[i].active=false;
         this.Code.splice(i,0,{or:"",op:'---',rs1:0,rs2:0,rd:0,mc:0,active:false,run:false,breakpoint:false});
         document.getElementById(String(i)).innerHTML="";//焦点移动前默认网页中是最新的
-        for(var key in Object.keys(this.Label)){
+        for(var j in keys){
           //所有大于等于i的行,行数+1
-          if(this.Label[key]>=i){
-            this.Label[key]+=1;
+          if(this.Label[keys[j]]>=i){
+            this.Label[keys[j]]+=1;
           }
         } 
         this.MoveFocus(i);
@@ -378,21 +400,16 @@ export default {
       var e=window.event;
       if(e.keyCode==8) return;
       e.returnValue=false;
+      //焦点移到i-1行，如果是0行，焦点不变
       if(i>=1){
         this.MoveFocus(i-1);
       }
-      else if(i<this.Code.length-1){
-        //未删除前有两条及以上的记录
-        this.MoveFocus(i+1);  
-      }
-      else{
-        this.Focus=null;
-      }
       //删除标签，如果存在的话
       if(Object.values(this.Label).indexOf(i)!=-1){
-        for(var key in Object.keys(this.Label)){
-          if(this.Label[key]==i){
-            delete this.Label[key];
+        var keys=Object.keys(this.Label);
+        for(var j in keys){
+          if(this.Label[keys[j]]==i){
+            delete this.Label[keys[j]];
           }
           else if(this.Label[key]>i){
             this.Label[key]-=1;
@@ -404,6 +421,9 @@ export default {
       }
       else{
         this.Code.splice(i,1, {or:"",op:"--",rd:0,rs1:0,rs2:0, mc:0, active:false,run:false,breakpoint:false, tag:'E', Message:"空指令"})
+      }
+      if(i==0){
+        this.MoveFocus(0);//插入的这行是非active的。
       }
     },
     Up:function(i){
@@ -827,9 +847,10 @@ export default {
           this.Label[label]=i;
         }
         else{
-          for(var key in Object.keys(this.Label)){
-            if(this.Label[key]==i){
-              delete Label[key];
+          var keys=Object.keys(this.Label)
+          for(var j in keys){
+            if(this.Label[keys[j]]==i){
+              delete Label[keys[j]];
               this.Label[label]=i;
               break;
             }
@@ -1099,8 +1120,8 @@ export default {
     },
     Step: function(){
       this.MoveFocus(null);
-      for(var c in this.Code){
-        if(c.tag=='E') return;
+      for(var i in this.Code){
+        if(this.Code[i].tag=="E") return;
       }
       if(this.pc==-1){
         this.pc=0;
@@ -1352,22 +1373,23 @@ export default {
   }  
   .code-mc {
     padding-top: 1%;
-    width: 25%;
+    width: 50px;
   }
   .code-pre{
+    width: 40px;
+    padding-right:50px;
     padding-top: 1%;
-    width:30%；
+    padding-left: 30px;
   }
   .code-op {
-    padding-right:5%;
+    padding-right:8px;
     color: darkred;
   }
   .code-rs {
-    padding-right:5%;
+    padding-right:5px;
   }
   .code-or {
     padding-top: 1%;
-    width:40%;
   }
   .code-out {
     border: 1.5px solid lightgrey;
