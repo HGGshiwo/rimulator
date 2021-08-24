@@ -84,6 +84,19 @@
                     <span class="code-rs">{{this.Reg[c.rd].name}}</span>
                     <span class="code-rs">{{c.rs1}}</span>
                   </span>
+                  <span v-else-if="c.op=='mret'">
+                  </span>
+                  <span v-else-if="this.Inst[c.op].type=='sys'&&c.op[c.op.length-1]!='i'">
+                    <span class="code-rs">{{this.Reg[c.rd].name}}</span>
+                    <span class="code-rs">{{this.Reg[c.rs2].name}}</span>
+                    <span class="code-rs">{{this.Reg[c.rs1].name}}</span>
+                  </span>
+                  <span v-else-if="this.Inst[c.op].type=='sys'">
+                    <span class="code-rs">{{this.Reg[c.rd].name}}</span>
+                    <span class="code-rs">{{this.Reg[c.rs2].name}}</span>
+                    <span class="code-rs">{{c.rs1}}</span>
+                  </span>
+                  
                   <span v-else-if="this.Inst[c.op].type=='n'">
                     <span class="code-rs">--</span>
                     <span class="code-rs">--</span>
@@ -286,12 +299,13 @@ export default {
         'fence.i':{op7:"0001111",type:'f'},
         'ecall':  {op7:"1110011",type:'e'},
         'ebreak': {op7:"1110011",type:'e'},
-        'csrrw':  {op7:"1110011",type:'c'},
-        'csrrs':  {op7:"1110011",type:'c'},
-        'csrrc':  {op7:"1110011",type:'c'},
-        'csrrwi': {op7:"1110011",type:'c'},
-        'cssrrsi':{op7:"1110011",type:'c'},
-        'csrrci': {op7:"1110011",type:'c'},
+        'csrrw':  {op7:"1110011",fun3:"001",type:'sys'},
+        'csrrs':  {op7:"1110011",fun3:"010",type:'sys'},
+        'csrrc':  {op7:"1110011",fun3:"011",type:'sys'},
+        'csrrwi': {op7:"1110011",fun3:"101",type:'sys'},
+        'cssrrsi':{op7:"1110011",fun3:"110",type:'sys'},
+        'csrrci': {op7:"1110011",fun3:"111",type:'sys'},
+        'mret':   {mc:"00110000001000000000000001110011",type:'sys'},
         '---':    {type:'n'},
       },
       Label:{},
@@ -456,6 +470,15 @@ export default {
       }
       return Object.values(reg1).indexOf(rd);
     },
+    CheckCsr: function(reg){
+      reg=reg.toLowerCase()
+      var c=["mtvec","mepc","mcause","mie","mip","mtval","mscratch","mstatus"]
+      var index=c.indexOf(reg)
+      if(index==-1){
+        return null;
+      }
+      return index
+    },
     Compile:function(i){
       if(document.getElementById(String(i))==null){
         return true;
@@ -489,7 +512,10 @@ export default {
           or=or[1];
         }
       }
-
+      var end=or.indexOf("#")
+      if(end!=-1){
+        or=or.substring(0,end+1)//注释
+      }
       or=or.split(/&nbsp|[^\w-]/).filter(Boolean);
       if(or==""){
         this.Code[i].Message="空指令";
@@ -841,6 +867,71 @@ export default {
           this.Code[i].rs1=imm;
           this.Code[i].rd=rd;
           break;
+        case('sys'):
+          if(op=="mret"){
+            var mc=Array(32);
+            for(var j=0;j<32;j++) mc[j]=this.Inst['mret'].mc[j];
+            this.Code[i].mc=parseInt(mc.join(''),2);
+            this.Code[i].op=op;
+            this.Code[i].rs1='';
+            this.Code[i].rs2='';
+            this.Code[i].rd='';  
+            return;
+          }
+          if(or.length != 4){
+            this.Code[i].Message="特权指令参数个数为3, 当前参数个数"+String(or.length-1);
+            this.Code[i].tag='E';
+            return false;
+          }
+          var rd=this.CheckReg(or[1]);
+          if(rd==null){
+            this.Code[i].Message="不支持的寄存器名称: "+or[1];
+            this.Code[i].tag='E';
+            return false;
+          }
+          var csr=this.CheckCsr(or[2]);
+          if(csr==null){
+            this.Code[i].Message="不支持的特权寄存器名称: "+or[2];
+            this.Code[i].tag='E';
+            return false;
+          }
+          var rs1; 
+          if(op[op.length-1]!='i'){
+            rs1=this.CheckReg(or[3]);
+            if(rs1==null){
+              this.Code[i].Message="不支持的寄存器名称: "+or[3];
+              this.Code[i].tag='E';
+              return false;
+            }
+          }
+          else{
+            var imm=parseInt(or[3]);
+            if(isNaN(imm)){
+              this.Code[i].Message="类型错误的立即数: "+or[3];
+              this.Code[i].tag='E';
+              return false;
+            }
+            if(Math.abs(imm)>0x7ff){
+              this.Code[i].Message="立即数越界,当前为: "+String(imm);
+              this.Code[i].tag='E';
+              return false;
+            }
+            imm&=0xfff;
+            rs1=imm;
+          }
+          var Csr=['001100000101','001101000001','001101000010','001100000100','001101000100','001101000011','001100000100','300']
+          var mc=Array(32);
+          for(var j=0;j<12;j++) mc[j]=Csr[csr][j];
+          for(var j=0;j<5;j++) mc[12+j]=('00000'+rs1.toString(2)).slice(-5)[j];
+          for(var j=0;j<3;j++) mc[17+j]=this.Inst[op].fun3[j];
+          for(var j=0;j<5;j++) mc[20+j]=('00000'+rd.toString(2)).slice(-5)[j];
+          for(var j=0;j<7;j++) mc[25+j]=this.Inst[op].op7[j];
+          this.Code[i].mc=parseInt(mc.join(''),2);
+          this.Code[i].op=op;
+          this.Code[i].rs1=rs1;
+          this.Code[i].rs2=csr+32;
+          this.Code[i].rd=rd;  
+          break;
       }
       if(label!=null){
         if(Object.keys(this.Label).indexOf(label)==-1){
@@ -1115,6 +1206,39 @@ export default {
               break;
           }
           break;
+        case('sys'):
+          if(!code.rd) break;
+          switch(code.op){
+            case('csrrc'):
+              this.Reg[code.rd].value=this.Reg[code.rs2].value;
+              this.Reg[code.rs2].value&=~this.Reg[this.rs1]
+              break;
+            case('csrrci'):
+              this.Reg[code.rd].value=this.Reg[code.rs2].value;
+              this.Reg[code.rs2].value&=~this.rs1
+              break;
+            case('csrrs'):
+              this.Reg[code.rd].value=this.Reg[code.rs2].value;
+              this.Reg[code.rs2].value|=this.Reg[this.rs1]
+              break;
+            case('csrrsi'):
+              this.Reg[code.rd].value=this.Reg[code.rs2].value;
+              this.Reg[code.rs2].value|=this.rs1
+              break;              
+            case('csrrw'):
+              this.Reg[code.rd].value=this.Reg[code.rs2].value;
+              this.Reg[code.rs2].value=this.Reg[this.rs1]
+              break;
+            case('csrrwi'):
+              this.Reg[code.rd].value=this.Reg[code.rs2].value;
+              this.Reg[code.rs2].value=this.rs1
+              break;
+            case('mret'):
+              this.pc=this.Reg[33].value
+              //todo
+              break; 
+          }
+          break;
       }
       return true;
     },
@@ -1241,6 +1365,10 @@ export default {
     Edit:function(){
       this.ConsoleModel='edit'
     },
+    Exp:function(){
+      //处理异常
+
+    }
   },
   computed:{
     Output:function(){
