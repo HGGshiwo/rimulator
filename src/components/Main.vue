@@ -325,20 +325,30 @@ export default {
       var n=String(this.Code.length).length
       return String(i).padStart(n,'0')
     },
+    FreshAll:function(){
+      for(var j=0;j<this.Code.length;j++){
+        this.Compile(j);
+      }
+    },
+    Vaild:function(s){
+      　return RegExp(/\w/g).test(s) 
+    },
     EditCode:function(){
       if(this.ConsoleModel!='edit'){
         return;
       }
       var str=document.getElementsByClassName('code-out')[0].innerHTML;
-      str=str.replace(/&nbsp;/g,' ').replace(/<div>|"/g,'').replace(/<\/div>/g,'<br>');
+      str=str.replace(/&nbsp;/g,' ').replace(/<div[^>]*>|"|<span[^>]*>|<\/span>/g,' ').replace(/<\/div>/g,'<br>');
       str=str.split('<br>');
-      str=str.filter(Boolean);
+      for(var i in str){
+        str[i]=str[i].replace(/#.*/g,'')
+      }
+      str=str.filter(this.Vaild);
       this.Code=[];
       for(var i=0;i<str.length;i++){
         this.Code.push(
           {or:str[i],op:"---",rd:0,rs1:0,rs2:0, mc:0x000000, active:false,run:false,breakpoint:false, tag:'I', Message:"无错误"},
         )
-        this.Compile(i);
       }
       if(this.Code.length==0){
         this.Code.splice(i,1, {or:"",op:"--",rd:0,rs1:0,rs2:0, mc:0, active:false,run:false,breakpoint:false, tag:'E', Message:"空指令"})
@@ -366,12 +376,6 @@ export default {
         首先检查当前焦点和所有错误语句, 然后更新当前焦点内容
         最后修改焦点. 总是默认为innerHTML是最新的，但是现在却是Code是最新的。
       */
-      console.log(this.Focus);
-      for(var j=0;j<this.Code.length;j++){
-        if(this.Code[j].tag=='E'||j==this.Focus) {
-          this.Compile(j);
-        }
-      }
       if(this.Focus!=null){
         this.Code[this.Focus].active=false;
         this.Code[this.Focus].or=document.getElementById(String(this.Focus)).innerHTML;
@@ -388,7 +392,7 @@ export default {
       var t=document.getElementById(String(this.Focus)).innerHTML;
       var keys=Object.keys(this.Label)
       if(x!=0||t==""){
-        this.Code.splice(i+1,0,{or:"",op:'---',rs1:0,rs2:0,rd:0,mc:0,active:false,run:false,breakpoint:false}); 
+        this.Code.splice(i+1,0,{or:"",op:'---',rs1:0,rs2:0,rd:0,mc:0,active:false,run:false,breakpoint:false,tag:'E',Message:'空指令'}); 
         for(var j in keys){
           //所有大于i的行,行数+1
           if(this.Label[keys[j]]>i){
@@ -399,7 +403,7 @@ export default {
       }
       else{
         this.Code[i].active=false;
-        this.Code.splice(i,0,{or:"",op:'---',rs1:0,rs2:0,rd:0,mc:0,active:false,run:false,breakpoint:false});
+        this.Code.splice(i,0,{or:"",op:'---',rs1:0,rs2:0,rd:0,mc:0,active:false,run:false,breakpoint:false,tag:'E',Message:'空指令'});
         document.getElementById(String(i)).innerHTML="";//焦点移动前默认网页中是最新的
         for(var j in keys){
           //所有大于等于i的行,行数+1
@@ -408,7 +412,8 @@ export default {
           }
         } 
         this.MoveFocus(i);
-      } 
+      }
+      this.FreshAll() 
     },
     Remove:function(i){
       var e=window.event;
@@ -437,15 +442,19 @@ export default {
         this.Code.splice(i,1, {or:"",op:"--",rd:0,rs1:0,rs2:0, mc:0, active:false,run:false,breakpoint:false, tag:'E', Message:"空指令"})
       }
       if(i==0){
-        this.MoveFocus(0);//插入的这行是非active的。
+        this.Focus=0;//插入的这行是非active的。
+        this.Code[0].active=true;
       }
+      this.FreshAll();
     },
     Up:function(i){
       if(i>=1)
         this.MoveFocus((i-1)%this.Code.length);
+      this.FreshAll()
     },
     Down:function(i){
-        this.MoveFocus((i+1)%this.Code.length)
+      this.MoveFocus((i+1)%this.Code.length)
+      this.FreshAll()
     },
     ChangeBP: function(i){
       this.Code[i].breakpoint=!this.Code[i].breakpoint;
@@ -496,6 +505,7 @@ export default {
       if(or.indexOf(":")!=-1){
         //处理标签
         or=or.split(":");
+        or[0]=or[0].replace(/\s/g,'')
         if(or.length>2){
           this.Code[i].Message="标签中含有非法字符: ':'"
           this.Code[i].tag="E";
@@ -511,10 +521,6 @@ export default {
           label=or[0];
           or=or[1];
         }
-      }
-      var end=or.indexOf("#")
-      if(end!=-1){
-        or=or.substring(0,end+1)//注释
       }
       or=or.split(/&nbsp|[^\w-]/).filter(Boolean);
       if(or==""){
@@ -941,7 +947,7 @@ export default {
           var keys=Object.keys(this.Label)
           for(var j in keys){
             if(this.Label[keys[j]]==i){
-              delete Label[keys[j]];
+              delete this.Label[keys[j]];
               this.Label[label]=i;
               break;
             }
@@ -1031,16 +1037,16 @@ export default {
             case('xori'):
               this.Reg[code.rd].value=this.Reg[code.rs1].value^imm12;
               break;
-            case('srl'):
+            case('srli'):
               this.Reg[code.rd].value=this.Reg[code.rs1].value>>>code.rs2;
               break;
-            case('sra'):
+            case('srai'):
               this.Reg[code.rd].value=this.Reg[code.rs1].value>>code.rs2;
               break;
-            case('or'):
+            case('ori'):
               this.Reg[code.rd].value=this.Reg[code.rs1].value|imm12;
               break;
-            case('and'):
+            case('andi'):
               this.Reg[code.rd].value=this.Reg[code.rs1].value&imm12;
               break;
           }
@@ -1265,7 +1271,7 @@ export default {
       if(type!='b'&&type!='j'&&type!='jr'){
           this.pc+=4;
       }
-      if(this.pc!=this.Code.length){
+      if((this.pc>>2)!=this.Code.length){
         this.Code[this.pc>>2].run=true;
         return;
       }    
@@ -1497,7 +1503,8 @@ export default {
     font-size: 20px;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: cadetblue;
-    width: 5%;
+    width: 30px;
+    padding-right: 5px;
   }  
   .code-mc {
     padding-top: 1%;
